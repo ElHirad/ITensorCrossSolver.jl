@@ -1,0 +1,47 @@
+name: Julia tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Julia ${{ matrix.julia-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # '1' tracks the latest stable Julia 1.x release automatically.
+        julia-version: ['1.10', '1']
+        include:
+          - os: macos-latest
+            julia-version: '1'
+          - os: windows-latest
+            julia-version: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+      - name: Run default examples on latest stable Julia
+        if: matrix.julia-version == '1'
+        run: |
+          julia --project=. examples/burgers_1d.jl
+          julia --project=. examples/schrodinger_2d.jl
+          julia --project=. examples/advection_diffusion_reaction_2d.jl
+  format:
+    name: Julia formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - run: julia --project=tools -e 'using Pkg; Pkg.instantiate()'
+      - run: julia --project=tools tools/format.jl --check

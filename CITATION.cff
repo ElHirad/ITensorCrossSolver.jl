@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this package, please cite this software and the relevant numerical-method literature."
+type: software
+title: "ITensorCrossSolver.jl"
+version: 0.1.0
+date-released: 2026-10-12
+authors:
+  - family-names: Alipanah
+    given-names: Hirad
+repository-code: "https://github.com/ElHirad/ITensorCrossSolver.jl"
+license: MIT

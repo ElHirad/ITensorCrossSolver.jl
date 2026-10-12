@@ -1,0 +1,10 @@
+Manifest*.toml
+*.cov
+*.mem
+examples/output/
+benchmarks/output/
+.DS_Store
+tmp/
+tools/Manifest.toml
+# Original local research input; the standalone package is implemented in Julia.
+/4DNLSchrodinger.py
