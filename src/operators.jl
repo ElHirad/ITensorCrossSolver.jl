@@ -52,7 +52,8 @@ Second-order centered first/second spatial derivative on a binary quantics grid.
 No dense grid matrix is formed. `:dirichlet` (or `:homogeneous`) uses zero values
 outside the interior-point grid, whose spacing is `(b-a)/(2^n+1)`; periodic grids
 omit the duplicate endpoint and have spacing `(b-a)/2^n`.
-With `direction=:reverse`, reverse both site order and bit order of the state.
+Sites always run from most to least significant bit. The legacy `direction`
+keyword accepts only `:forward`; reversed derivative networks are unsupported.
 """
 function finite_difference_mpo(
     sites, dx::Real; order::Integer=2, boundary::Symbol=:periodic, direction::Symbol=:forward
@@ -62,7 +63,8 @@ function finite_difference_mpo(
     order in (1, 2) || throw(ArgumentError("derivative order must be 1 or 2"))
     boundary in (:periodic, :dirichlet, :homogeneous) ||
         throw(ArgumentError("unsupported boundary"))
-    direction in (:forward, :reverse) || throw(ArgumentError("unsupported direction"))
+    direction == :forward ||
+        throw(ArgumentError("derivative sites must be MSB-first; use direction=:forward"))
     S = _shift_mpo(sites, boundary == :periodic)
     St = _mpo_from_cores([permutedims(c, (1, 3, 2, 4)) for c in _mpo_cores(S)], sites)
     identity = _mpo_from_cores(
@@ -71,10 +73,6 @@ function finite_difference_mpo(
     # Exact addition followed by a roundoff-level compression keeps MPO bonds small.
     A = order == 1 ? (S - St) / (2dx) : (S + St - 2identity) / dx^2
     length(A) > 1 && truncate!(A; cutoff=1e-28)
-    if direction == :reverse
-        cs = [permutedims(c, (4, 2, 3, 1)) for c in reverse(_mpo_cores(A))]
-        A = _mpo_from_cores(cs, reverse(sites))
-    end
     return A
 end
 
@@ -83,7 +81,8 @@ end
 
 Embed a derivative along 1-based physical `axis` into a grouped-bit multidimensional
 grid. `bits_per_dim` is a vector or tuple of bit counts; identity operators pad other axes.
-`direction=:reverse` reverses the entire network, including the padding.
+Physical axes follow the supplied order, with MSB-first bits inside each group.
+The legacy `direction` keyword accepts only `:forward`.
 """
 function multidim_derivative_mpo(
     sites, bits_per_dim, axis::Integer, dx::Real; direction::Symbol=:forward, kwargs...
@@ -92,16 +91,13 @@ function multidim_derivative_mpo(
         throw(DimensionMismatch("bit counts must be positive and sum to the number of sites"))
     all(s -> dim(s) == 2, sites) || throw(ArgumentError("binary sites required"))
     1 <= axis <= length(bits_per_dim) || throw(ArgumentError("invalid physical axis"))
-    direction in (:forward, :reverse) || throw(ArgumentError("unsupported direction"))
+    direction == :forward ||
+        throw(ArgumentError("derivative sites must be MSB-first; use direction=:forward"))
     a = sum(bits_per_dim[1:(axis - 1)]; init=0) + 1
     b = a + bits_per_dim[axis] - 1
     localop = finite_difference_mpo(sites[a:b], dx; kwargs...)
     cores = [reshape(Matrix{Float64}(I, 2, 2), 1, 2, 2, 1) for _ in sites]
     cores[a:b] = _mpo_cores(localop)
-    if direction == :reverse
-        cores = [permutedims(c, (4, 2, 3, 1)) for c in reverse(cores)]
-        sites = reverse(sites)
-    end
     return _mpo_from_cores(cores, sites)
 end
 

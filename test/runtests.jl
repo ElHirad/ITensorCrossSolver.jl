@@ -18,6 +18,7 @@ BLAS.set_num_threads(1)
     include("operators.jl")
     include("stencils.jl")
     include("evolution.jl")
+    include("ordering.jl")
     include("examples.jl")
     include("advection_diffusion_reaction_2d.jl")
 end

@@ -118,7 +118,7 @@ function benchmark_derivatives(;
         for h in diff(times)
             dns = adr2d_dns_step(dns, h, dx, dx)
         end
-        to_field(sol) = permutedims(reshape(dense_vector(last(sol.states)), n, n), (2, 1))
+        to_field(sol) = dense_tensor(last(sol.states), (n, n))
         for method in (:pure, :hybrid)
             metrics = adr2d_l2_metrics(to_field(warmed[method]), dns, dx, dx)
             metrics.relative_l2_error < 1e-8 || error("$method fails DNS accuracy target")

@@ -1,7 +1,7 @@
 name = "ITensorCrossSolver"
 uuid = "7572a138-f0a2-49ce-9d93-6846d0ec5692"
 authors = ["Hirad Alipanah"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 ITensorMPS = "0d1a4710-d33b-49a5-8f18-73bdf49b47e2"

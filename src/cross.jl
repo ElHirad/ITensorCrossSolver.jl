@@ -29,7 +29,7 @@ function _random_tuples(rng, dims, count; existing=Tuple[])
     # Enumerate only small sample spaces, avoiding rejection near saturation.
     total = _capped_product(dims, max(4target, 1))
     if total <= 2target
-        candidates = vec([Tuple(i) for i in CartesianIndices(Tuple(dims))])
+        candidates = vec([reverse(Tuple(i)) for i in CartesianIndices(Tuple(reverse(dims)))])
         shuffle!(rng, candidates)
         for i in candidates
             length(samples) == target && break
@@ -66,7 +66,9 @@ function _cross_sweep(f, dims, right, caps, tolerance, adaptive, oversampling)
     extended = Vector{Vector{Tuple}}()
     for k in 1:(length(dims) - 1)
         fiber = evaluate_fiber(f, dims, k, prefixes, right[k])
-        matrix = reshape(fiber, length(prefixes) * dims[k], :)
+        # Prefix is the more significant row component; physical site varies
+        # fastest, consistently with MSB-first dense unfoldings.
+        matrix = reshape(permutedims(fiber, (2, 1, 3)), length(prefixes) * dims[k], :)
         F = svd(matrix)
         cap = min(caps[k], length(F.S))
         # Even in fixed-budget mode remove numerically null singular directions.
@@ -75,11 +77,10 @@ function _cross_sweep(f, dims, right, caps, tolerance, adaptive, oversampling)
         U = F.U[:, 1:r]
         pivots = deim(U)
         G = U / U[pivots, :]
-        push!(cores, reshape(G, length(prefixes), dims[k], r))
+        push!(cores, permutedims(reshape(G, dims[k], length(prefixes), r), (2, 1, 3)))
         extra = min(oversampling, size(U, 1)-r)
         samples = gappy_pod(U, extra, pivots)
-        # Julia reshape uses the left bond as the fastest-varying row index.
-        expand(p) = (prefixes[mod1(p, length(prefixes))]..., cld(p, length(prefixes)))
+        expand(p) = (prefixes[cld(p, dims[k])]..., mod1(p, dims[k]))
         push!(extended, Tuple[expand(p) for p in samples])
         prefixes = Tuple[expand(p) for p in pivots]
     end
@@ -99,7 +100,10 @@ and independent random validation entries (exhaustive only on very small tensors
 when validation fails and truncates sampled singular spectra. With `adaptive=false`
 the supplied rank budgets remain fixed, apart from numerical rank deficiency.
 
-The returned MPS always uses the original site order, for odd and even sweep counts.
+Site tuples and returned MPSs use MSB-first order (last site varies fastest).
+Backward sweeps temporarily reverse the network and restore the original order
+before returning, for both odd and even sweep counts. DEIM row numbers are local
+to the current ordered prefix list; they are not full-grid point indices.
 Inspect `result.converged` and `result.errors[end]`; a rank/sweep limit can prevent
 convergence. Random samples can miss isolated spikes; this is a smooth/low-rank
 approximation method, not a global error certificate. Pass your own RNG for control.
@@ -192,5 +196,17 @@ function tt_cross(
     return CrossResult(cores_to_mps(cores; sites), errors, length(errors), length(cache), success)
 end
 
-"""TT-cross of an existing array; tensor axes correspond directly to MPS sites."""
+"""
+    tt_cross_tensor(A; kwargs...)
+    tt_cross_tensor(values, dims; kwargs...)
+
+TT-cross of a tensor whose axes are already in MSB-first site order, or of a flat
+physical-order vector with explicit mode dimensions. Use the vector overload
+for sampled data, e.g. `tt_cross_tensor(y, fill(2,4))`. A plain Julia
+`reshape(y,2,2,2,2)` changes the bit ordering; use `msb_tensor` instead.
+The one-argument overload preserves `A[i₁,...,iₙ]` exactly as supplied.
+"""
 tt_cross_tensor(A::AbstractArray; kwargs...) = tt_cross(i -> A[i...], size(A); kwargs...)
+function tt_cross_tensor(values::AbstractVector, dims; kwargs...)
+    return tt_cross_tensor(msb_tensor(values, dims); kwargs...)
+end

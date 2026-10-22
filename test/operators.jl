@@ -23,9 +23,7 @@ end
         A = finite_difference_mpo(sites, dx; order, boundary)
         ref = reference_derivative(2^nbits, dx, order, boundary == :periodic)
         @test dense_operator(A) ≈ ref atol=2e-11
-        reversed = finite_difference_mpo(sites, dx; order, boundary, direction=:reverse)
-        permutation = [grid_index(reverse(quantics_index(i, nbits))) for i in 1:(2 ^ nbits)]
-        @test dense_operator(reversed) ≈ ref[permutation, permutation] atol=2e-11
+        @test [siteind(A, k; plev=0) for k in 1:length(A)] == sites
     end
     sites = quantics_sites(5)
     for axis in 1:2
@@ -36,9 +34,7 @@ end
         @test dense_operator(A) ≈ ref atol=1e-10
         tuple_op = multidim_derivative_mpo(sites, (2, 3), axis, 0.1; order=2, boundary=:periodic)
         @test dense_operator(tuple_op) ≈ ref atol=1e-10
-        rev = multidim_derivative_mpo(sites, [2, 3], axis, 0.1; direction=:reverse)
-        perm = [grid_index(reverse(quantics_index(i, 5))) for i in 1:32]
-        @test dense_operator(rev) ≈ ref[perm, perm] atol=1e-10
+        @test [siteind(A, k; plev=0) for k in 1:length(A)] == sites
     end
     # Analytic Fourier eigenvalues independently verify signs and grid ordering.
     n = 64
@@ -57,6 +53,10 @@ end
     @test_throws ArgumentError finite_difference_mpo(sites, 0.1; order=3)
     @test_throws ArgumentError finite_difference_mpo(sites, 0.1; boundary=:bad)
     @test_throws ArgumentError finite_difference_mpo(sites, 0.1; direction=:bad)
+    @test_throws ArgumentError finite_difference_mpo(sites, 0.1; direction=:reverse)
+    @test_throws ArgumentError multidim_derivative_mpo(
+        quantics_sites(5), (2, 3), 1, 0.1; direction=:reverse
+    )
     @test_throws ArgumentError finite_difference_mpo([Index(3)], 0.1)
     @test_throws DimensionMismatch multidim_derivative_mpo(sites, [2, 3], 1, 0.1)
     @test_throws ArgumentError multidim_derivative_mpo(sites, [3, 3], 3, 0.1)

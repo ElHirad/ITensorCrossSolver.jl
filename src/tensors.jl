@@ -14,12 +14,67 @@ end
 """Decode 1-based binary site values, most significant bit first."""
 function grid_index(bits)
     0 < length(bits) < 8sizeof(Int)-1 || throw(ArgumentError("unsupported bit count"))
-    all(b -> b in (1, 2), bits) || throw(ArgumentError("binary indices must be 1 or 2"))
+    all(b -> b isa Integer && b in (1, 2), bits) ||
+        throw(ArgumentError("binary indices must be integers 1 or 2"))
     i = 0
     for b in bits
         i = 2i + b - 1
     end
     return i + 1
+end
+
+function _msb_dimensions(dims, entries)
+    sizes = Tuple(dims)
+    !isempty(sizes) && all(n -> n isa Integer && n > 0, sizes) ||
+        throw(ArgumentError("mode dimensions must be positive integers"))
+    # Compare before multiplying, so impossible/overflowing shapes fail cleanly.
+    total = 1
+    for n in sizes
+        n <= entries ÷ total || throw(DimensionMismatch("dimensions do not match entry count"))
+        total *= Int(n)
+    end
+    total == entries || throw(DimensionMismatch("dimensions do not match entry count"))
+    return Int.(sizes)
+end
+
+"""
+    msb_tensor(values, dims)
+
+Convert a flat vector in physical/MSB-first order to a tensor with axes in site
+order. The last axis varies fastest: for `(2,2)`, rows are `[v[1] v[2]]` and
+`[v[3] v[4]]`. Unlike Julia's `reshape`, this preserves the package's grid order.
+Supports nonbinary dimensions and grouped physical-grid shapes, e.g. `(nx,ny)`.
+Returns a copy and never conjugates complex values.
+"""
+function msb_tensor(values::AbstractVector, dims)
+    sizes = _msb_dimensions(dims, length(values))
+    return permutedims(reshape(collect(values), reverse(sizes)), reverse(1:length(sizes)))
+end
+
+"""
+    msb_vector(A)
+
+Flatten a tensor in MSB-first/lexicographic order, with the last axis varying
+fastest. Inverse of `msb_tensor(v, size(A))`; returns a copy without conjugation.
+Julia's `vec(A)` instead makes the first axis vary fastest.
+"""
+function msb_vector(A::AbstractArray)
+    ndims(A) > 0 && all(>(0), size(A)) || throw(ArgumentError("nonempty tensor required"))
+    return vec(permutedims(A, reverse(1:ndims(A))))
+end
+
+"""
+    msb_unfolding(A, bond)
+
+Return the dense matrix across `bond`: sites `1:bond` label rows and the rest
+label columns, both in MSB-first order. For binary sites, row and column indices
+are `grid_index(prefix)` and `grid_index(suffix)`. This is a dense diagnostic;
+TT-cross constructs only its sampled local matrices. No complex conjugation.
+"""
+function msb_unfolding(A::AbstractArray, bond::Integer)
+    1 <= bond < ndims(A) || throw(ArgumentError("bond must lie between tensor sites"))
+    rows, cols = prod(size(A)[1:bond]), prod(size(A)[(bond + 1):end])
+    return permutedims(reshape(msb_vector(A), cols, rows))
 end
 
 """
@@ -60,7 +115,7 @@ function _check_cores(cores)
     return nothing
 end
 
-"""Convert `(left, physical, right)` TT cores to an ITensorMPS `MPS`."""
+"""Convert `(left, physical, right)` TT cores in MSB-first site order to an MPS."""
 function cores_to_mps(cores; sites=[Index(size(c, 2), "Site,n=$k") for (k, c) in enumerate(cores)])
     _check_cores(cores)
     n = length(cores)
@@ -95,7 +150,12 @@ function mps_to_cores(psi::MPS)
     end
 end
 
-"""Reverse site order and swap left/right core bonds, without conjugation."""
+"""
+Reverse site order and swap left/right core bonds, without conjugation.
+This low-level permutation supports internal backward sweeps; it does not
+preserve the physical meaning of a grid. Reverse again before MSB-first grid
+evaluation or applying spatial operators.
+"""
 function reverse_cores(cores)
     _check_cores(cores)
     return [permutedims(c, (3, 2, 1)) for c in reverse(cores)]
@@ -142,14 +202,19 @@ function evaluate_fiber(psi::MPS, mode::Integer, left, right)
     return evaluate_fiber(idx -> _evaluate(c, idx), size.(c, 2), mode, left, right)
 end
 
-"""Reconstruct a small MPS as a Julia array with axes in site order."""
+"""
+    dense_tensor(psi)
+    dense_tensor(psi, dims)
+
+Reconstruct with axes in MSB-first site order, or regroup into physical-grid
+dimensions such as `(nx,ny)`. Entries are indexed in axis order; use
+`msb_vector`, rather than `vec`, to flatten into physical grid order.
+"""
 dense_tensor(psi::MPS) = Array(prod(psi), siteinds(psi)...)
+dense_tensor(psi::MPS, dims) = msb_tensor(dense_vector(psi), dims)
 
 """Reconstruct in lexicographic/MSB-first grid order (last site varies fastest)."""
-function dense_vector(psi::MPS)
-    A = dense_tensor(psi)
-    return vec(permutedims(A, reverse(1:ndims(A))))
-end
+dense_vector(psi::MPS) = msb_vector(dense_tensor(psi))
 
 """Return the internal TT bond dimensions."""
 bond_dimensions(psi::MPS) = [dim(linkind(psi, k)) for k in 1:(length(psi) - 1)]

@@ -22,12 +22,16 @@ Requires **Julia 1.10 or later**. Install directly from GitHub:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/ElHirad/ITensorCrossSolver.jl", rev="v0.1.0")
+Pkg.add(url="https://github.com/ElHirad/ITensorCrossSolver.jl", rev="v0.2.0")
 using ITensorCrossSolver
 ```
 
 The package is not registered in Julia's General registry; use the URL above
 instead of `Pkg.add("ITensorCrossSolver")`. No Python installation is required.
+
+Version 0.2 adds explicit MSB array conversions and removes reversed derivative
+networks: `direction=:reverse` now raises an error. Use MSB-first sites for all
+spatial operators. See the [changelog](CHANGELOG.md) for migration details.
 
 ## Quick start
 
@@ -47,6 +51,21 @@ solution = solve_pde(rhs, initial.mps, (0.0, 0.1); dt=0.01,
 values = dense_vector(last(solution.states))
 ```
 
+For an already sampled vector, pass the site dimensions explicitly:
+
+```julia
+x = collect(0:15) / 15
+y = @. exp(x) - x^4
+result = tt_cross_tensor(y, fill(2, 4))
+values = dense_vector(result.mps)  # same physical grid order as y
+```
+
+All grid APIs use **MSB-first sites**, with the last site varying fastest.
+Use `msb_tensor(y, dims)` and `msb_vector(A)` for dense conversions, and
+`msb_unfolding(A, bond)` for dense DEIM diagnostics. Plain Julia `reshape`
+and `vec` use a different storage order. For multidimensional physical fields,
+`dense_tensor(psi, (nx, ny))` returns entries indexed as `field[ix, iy]`.
+
 For hybrid derivatives, construct `finite_difference_mpo` operators and pass
 them to `burgers_rhs(D1, D2; viscosity=0.1)`. See the
 [manual](docs/manual.md) for both approaches, indexing conventions, numerical
@@ -65,6 +84,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=. examples/burgers_1d.jl
 julia --project=. examples/schrodinger_2d.jl
 julia --project=. examples/advection_diffusion_reaction_2d.jl
+julia --project=. examples/deim_indices_1d.jl
 julia --project=. benchmarks/derivative_methods.jl
 ```
 

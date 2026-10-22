@@ -37,7 +37,7 @@ include("../examples/advection_diffusion_reaction_2d.jl")
         )
         @test initial.converged
         U = [adr2d_initial(xi, yj) for xi in x, yj in y]
-        to_field(psi) = permutedims(reshape(dense_vector(psi), ny, nx), (2, 1))
+        to_field(psi) = dense_tensor(psi, (nx, ny))
         @test to_field(initial.mps) ≈ U atol=2e-13
         operators = (
             x=multidim_derivative_mpo(sites, bits, 1, dx; order=1),

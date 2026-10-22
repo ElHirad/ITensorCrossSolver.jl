@@ -34,6 +34,7 @@ jobs:
           julia --project=. examples/burgers_1d.jl
           julia --project=. examples/schrodinger_2d.jl
           julia --project=. examples/advection_diffusion_reaction_2d.jl
+          julia --project=. examples/deim_indices_1d.jl
   format:
     name: Julia formatting
     runs-on: ubuntu-latest

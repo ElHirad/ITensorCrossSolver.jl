@@ -144,7 +144,8 @@ Validation uses random entries (all entries for tensors smaller than the
 validation sample count). It is a sampled diagnostic, not a rigorous global
 error estimate: isolated spikes or unsampled features can be missed. Increase
 validation samples and independently check application-specific observables.
-No full tensor is assembled by cross interpolation or PDE stepping. Small
+No full tensor is assembled by callback-based cross interpolation or PDE stepping.
+The vector/array overloads accept already dense inputs. Small
 problems can nevertheless have all their entries sampled. Evaluation caches
 use memory proportional to the unique samples in one cross call.
 
@@ -163,6 +164,20 @@ use memory proportional to the unique samples in one cross call.
   with the last site varying fastest. Use `dense_vector`, not
   `vec(dense_tensor(...))`, for quantics grid plots. `dense_operator` uses that
   same grid order. These dense utilities are intended for small diagnostics.
+- `msb_tensor(values, dims)` and `msb_vector(A)` convert between flat grid data
+  and arrays with axes in the declared order. `tt_cross_tensor(values, dims)`
+  applies that conversion before interpolation. Its one-argument array overload
+  preserves the entries and axes already supplied; it does not reinterpret a
+  previously reshaped tensor. For physical fields, use
+  `dense_tensor(psi, (nx,ny,...))` to group consecutive MSB-first bits by axis.
+- `msb_unfolding(A,k)` gives prefix rows and suffix columns in MSB-first order.
+  For binary sites its entries satisfy
+  `M[grid_index(prefix),grid_index(suffix)] == A[prefix...,suffix...]`.
+  Cross interpolation samples a local submatrix and retains its selected prefix
+  ordering. A local row is `(prefix_position-1)*site_dimension + site_value`.
+  Map that row through the selected prefix list before interpreting it as a
+  physical grid index. SVD-based DEIM can choose different pivots from DEIM
+  applied directly to the columns of the same matrix.
 - Periodic grids omit the repeated endpoint: `dx=(b-a)/N`, `x=a+(0:N-1)*dx`.
 - `:dirichlet` / `:homogeneous` grids contain interior unknowns only:
   `dx=(b-a)/(N+1)`, `x=a+(1:N)*dx`; values at the two external boundary nodes
@@ -172,8 +187,24 @@ use memory proportional to the unique samples in one cross call.
 centered second-order derivatives using rank-two binary shift automata. It
 does not construct an `N × N` matrix. For multiple physical coordinates use
 `multidim_derivative_mpo(sites, [nx_bits,ny_bits], axis, dx; ...)` with a 1-based
-axis. `direction=:reverse` reverses the complete MPO site order; apply it to
-a state created from `reverse_cores` with reversed site indices.
+axis. Both derivative backends always use MSB-first site order.
+`direction=:reverse` is rejected; the legacy keyword accepts only `:forward`.
+`reverse_cores` remains a low-level permutation for internal backward sweeps,
+whose results are restored to MSB-first order before being returned. It is not
+an alternative grid encoding for spatial operators.
+
+For the endpoint-inclusive 16-point function used in the DEIM example:
+
+```julia
+x = collect(0:15) * (1/15)
+y = @. exp(x) - x^4
+result = tt_cross_tensor(y, fill(2,4))
+A = msb_tensor(y, fill(2,4))
+rows = [deim(svd(msb_unfolding(A,k)).U) for k in 1:3] # using LinearAlgebra
+```
+
+`examples/deim_indices_1d.jl` also traces the actual cross selections, checks
+them against an uninstrumented solve, and prints their prefix/suffix meanings.
 
 ## Two derivative approaches
 
@@ -403,9 +434,27 @@ normalize their spectra/bases before squaring to prevent amplitude-dependent
 underflow or overflow.
 
 CI is configured to test Julia 1.10 on Linux and the latest stable Julia 1.x
-release on Linux, macOS, and Windows. The latest-version jobs also run all three default examples.
+release on Linux, macOS, and Windows. The latest-version jobs also run all three
+PDE examples and the DEIM tracing example.
 
-Validated on **Julia 1.13.1**, macOS Apple Silicon, with ITensors 0.9.32 and
+The **v0.2.0 MSB-first changes** were validated on **Julia 1.13.1**, macOS
+Apple Silicon, on October 22, 2026:
+
+- **1,377/1,377 tests passed** with bounds checking and deprecations treated as
+  errors, including 192 explicit MSB ordering assertions. No method ambiguities
+  or unbound type parameters were detected.
+- **556/556 instrumented source lines exercised**. This measures executed source
+  lines, not exhaustive input or branch coverage.
+- All three default PDE examples and the DEIM tracing example passed. The
+  16-point `exp(x)-x^4` example had relative reconstruction error `1.41e-16`.
+- Default Burgers relative L2 error: `6.49e-5`; Schrödinger relative mass drift:
+  `1.13e-12`; default ADR relative L2 error against same-grid DNS: `2.67e-10`.
+  The suite also checks the pure ADR backend against DNS and the hybrid result.
+- A 16 × 16, two-repetition derivative benchmark smoke check passed for both
+  backends. Historical runtime comparisons above describe the earlier baseline.
+- Julia formatting and whitespace checks passed.
+
+The published **v0.1.0** baseline was validated on **Julia 1.13.1**, macOS Apple Silicon, with ITensors 0.9.32 and
 ITensorMPS 0.4.2 on October 12, 2026:
 
 - **1,183 tests passed**, with array-bounds checks enabled and deprecations treated

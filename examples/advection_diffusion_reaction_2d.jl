@@ -219,9 +219,8 @@ function adr2d_example(;
     end
     # saveevery=1 is essential: the DNS takes exactly these RK4 steps.
     solution = solve_pde(rhs, initial.mps, (0.0, final_time); dt, saveevery=1, cross_kwargs=cross)
-    # dense_vector groups x bits first and varies y fastest; Julia arrays vary
-    # their first axis fastest. Transpose this reshape to obtain U[x,y].
-    to_field(psi) = permutedims(reshape(dense_vector(psi), ny, nx), (2, 1))
+    # Regroup consecutive x/y bits into physical axes using the shared MSB conversion.
+    to_field(psi) = dense_tensor(psi, (nx, ny))
     dns = copy(initial_field)
     numerical = to_field(solution.states[1])
     history = NamedTuple[]
